@@ -1,0 +1,99 @@
+diff -r f86df559319d Grammar/Grammar
+--- a/Grammar/Grammar	Mon Jul 09 21:23:58 2012 +0200
++++ b/Grammar/Grammar	Thu Jul 19 01:06:18 2012 -0700
+@@ -65,8 +65,9 @@
+ nonlocal_stmt: 'nonlocal' NAME (',' NAME)*
+ assert_stmt: 'assert' test [',' test]
+ 
+-compound_stmt: if_stmt | while_stmt | for_stmt | try_stmt | with_stmt | funcdef | classdef | decorated
++compound_stmt: if_stmt | unless_stmt | while_stmt | for_stmt | try_stmt | with_stmt | funcdef | classdef | decorated
+ if_stmt: 'if' test ':' suite ('elif' test ':' suite)* ['else' ':' suite]
++unless_stmt: 'unless' test ':' suite
+ while_stmt: 'while' test ':' suite ['else' ':' suite]
+ for_stmt: 'for' exprlist 'in' testlist ':' suite ['else' ':' suite]
+ try_stmt: ('try' ':' suite
+diff -r f86df559319d Parser/Python.asdl
+--- a/Parser/Python.asdl	Mon Jul 09 21:23:58 2012 +0200
++++ b/Parser/Python.asdl	Thu Jul 19 01:06:18 2012 -0700
+@@ -28,6 +28,7 @@
+ 	      | For(expr target, expr iter, stmt* body, stmt* orelse)
+ 	      | While(expr test, stmt* body, stmt* orelse)
+ 	      | If(expr test, stmt* body, stmt* orelse)
++        | Unless(expr test, stmt* body)
+ 	      | With(expr context_expr, expr? optional_vars, stmt* body)
+ 
+ 	      | Raise(expr? exc, expr? cause)
+diff -r f86df559319d Python/ast.c
+--- a/Python/ast.c	Mon Jul 09 21:23:58 2012 +0200
++++ b/Python/ast.c	Thu Jul 19 01:06:18 2012 -0700
+@@ -2629,6 +2629,25 @@
+ }
+ 
+ static stmt_ty
++ast_for_unless_stmt(struct compiling *c, const node *n)
++{
++    /* unless_stmt: 'unless' test ':' suite */
++    expr_ty expression;
++    asdl_seq *suite_seq;
++
++    REQ(n, unless_stmt);
++
++    expression = ast_for_expr(c, CHILD(n, 1));
++    if (!expression)
++        return NULL;
++    suite_seq = ast_for_suite(c, CHILD(n, 3));
++    if (!suite_seq)
++        return NULL;
++
++    return Unless(expression, suite_seq, LINENO(n), n->n_col_offset, c->c_arena);
++}
++
++static stmt_ty
+ ast_for_if_stmt(struct compiling *c, const node *n)
+ {
+     /* if_stmt: 'if' test ':' suite ('elif' test ':' suite)*
+@@ -3132,6 +3151,8 @@
+         switch (TYPE(ch)) {
+             case if_stmt:
+                 return ast_for_if_stmt(c, ch);
++            case unless_stmt:
++                return ast_for_unless_stmt(c, ch);
+             case while_stmt:
+                 return ast_for_while_stmt(c, ch);
+             case for_stmt:
+diff -r f86df559319d Python/compile.c
+--- a/Python/compile.c	Mon Jul 09 21:23:58 2012 +0200
++++ b/Python/compile.c	Thu Jul 19 01:06:18 2012 -0700
+@@ -1734,6 +1734,23 @@
+ }
+ 
+ static int
++compiler_unless(struct compiler *c, stmt_ty s)
++{
++  basicblock *end;
++  assert(s->kind == Unless_kind);
++  end = compiler_new_block(c);
++  if (end == NULL)
++    return 0;
++
++  VISIT(c, expr, s->v.Unless.test);
++  ADDOP_JABS(c, POP_JUMP_IF_TRUE, end);
++  VISIT_SEQ(c, stmt, s->v.Unless.body);
++  compiler_use_next_block(c, end);
++
++  return 1;
++}
++
++static int
+ compiler_for(struct compiler *c, stmt_ty s)
+ {
+     basicblock *start, *cleanup, *end;
+@@ -2293,6 +2310,8 @@
+         return compiler_while(c, s);
+     case If_kind:
+         return compiler_if(c, s);
++    case Unless_kind:
++        return compiler_unless(c, s);
+     case Raise_kind:
+         n = 0;
+         if (s->v.Raise.exc) {
