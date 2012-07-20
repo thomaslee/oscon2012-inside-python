@@ -1,3 +1,9 @@
+Modified for Inside Python @ OSCON 2012
+=======================================
+
+This is the vanilla source code to Python 3.2.3 + changes to introduce an
+"unless" keyword for a presentation at OSCON 2012: Inside Python.
+
 This is Python version 3.2.3
 ============================
 
