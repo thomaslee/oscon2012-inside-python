@@ -1744,6 +1744,7 @@ compiler_unless(struct compiler *c, stmt_ty s)
   VISIT(c, expr, s->v.Unless.test);
   ADDOP_JABS(c, POP_JUMP_IF_TRUE, end);
   VISIT_SEQ(c, stmt, s->v.Unless.body);
+  ADDOP_JREL(c, JUMP_FORWARD, end);
   compiler_use_next_block(c, end);
   return 1;
 }
